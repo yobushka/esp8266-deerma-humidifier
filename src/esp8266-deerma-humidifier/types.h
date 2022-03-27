@@ -1,4 +1,5 @@
 enum humMode_t {
+  unknown = -1,
   low = 1,
   medium = 2,
   high = 3,
@@ -8,12 +9,12 @@ enum humMode_t {
 struct humidifierState_t { 
   boolean powerOn;
   
-  humMode_t mode;
+  humMode_t mode = (humMode_t)-1;
   
-  int humiditySetpoint; //This is 0 when not in setpoint mode
+  int humiditySetpoint; // This is 0 when not in setpoint mode
   
-  int currentHumidity;
-  int currentTemperature;
+  int currentHumidity = -1; 
+  int currentTemperature = -1;
 
   boolean soundEnabled;
   boolean ledEnabled;
