@@ -1,6 +1,3 @@
-#include "types.h"
-#include "wifi.h"
-
 #include <ESP8266WiFi.h>
 #include <DNSServer.h>
 #include <ESP8266WebServer.h>
@@ -13,6 +10,36 @@
 /*
 Firmware documentation: https://iot.mi.com/new/doc/embedded-development/wifi/module-dev/serial-communication
 */
+
+char mqtt_server[80] = "";
+char username[24] = "";
+char password[24] = "";
+
+enum humMode_t {
+  unknown = -1,
+  low = 1,
+  medium = 2,
+  high = 3,
+  setpoint = 4
+};
+
+struct humidifierState_t { 
+  boolean powerOn;
+  
+  humMode_t mode = (humMode_t)-1;
+  
+  int humiditySetpoint; // This is 0 when not in setpoint mode
+  
+  int currentHumidity = -1; 
+  int currentTemperature = -1;
+
+  boolean soundEnabled;
+  boolean ledEnabled;
+
+  boolean waterTankInstalled;
+  boolean waterTankEmpty;
+};
+
 
 humidifierState_t state;
 
