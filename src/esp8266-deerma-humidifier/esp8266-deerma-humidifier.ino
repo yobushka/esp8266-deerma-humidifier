@@ -206,7 +206,7 @@ void setupGeneric()
   snprintf(MQTT_TOPIC_STATUS, 127, "%s/status", BOARD_IDENTIFIER);
   snprintf(MQTT_TOPIC_STATE, 127, "%s/state", BOARD_IDENTIFIER);
   snprintf(MQTT_TOPIC_COMMAND, 127, "%s/command", BOARD_IDENTIFIER);
-  snprintf(MQTT_TOPIC_DEBUG, 127, "%s/humidity", BOARD_IDENTIFIER);
+  snprintf(MQTT_TOPIC_DEBUG, 127, "%s/debug", BOARD_IDENTIFIER);
 
   loadConfig();
 }
@@ -279,7 +279,7 @@ void loopMDNS()
 
 void loopMQTT()
 {
-  if ((millis() - stateUpdatePreviousMillis > MQTT_STATUS_TIMEOUT))
+  if (currentTime - stateUpdatePreviousMillis > MQTT_STATUS_TIMEOUT)
   {
     publishState();
   }
@@ -357,7 +357,7 @@ void loopUART()
     mqttClient.publish(MQTT_TOPIC_DEBUG, serialRxBuf, true);
   }
 
-  SerialDebug.printf("Received: <%s>\n", serialRxBuf);
+  SerialDebug.printf("UART says: <%s>\n", serialRxBuf);
 
   if (strncmp(serialRxBuf, "properties_changed", 18) == 0)
   {
@@ -428,14 +428,16 @@ void loopUART()
     return;
   }
 
-  if (shouldUpdateState == true)
-  {
-    shouldUpdateState = false;
-    publishState();
-  }
-
   if (strncmp(serialRxBuf, "get_down", 8) == 0)
   {
+    // This if is inside here to make sure we prevent a wave of published states;
+    // if we wait until we get a "get_down" it means properties have been updated
+    if (shouldUpdateState == true)
+    {
+      shouldUpdateState = false;
+      publishState();
+    }
+
     fillNextDownstreamMessage();
 
     if (strncmp(nextDownstreamMessage, "none", 4) != 0)
@@ -471,7 +473,7 @@ void loopUART()
     return;
   }
 
-  SerialDebug.printf("Error: Unknown command received: %s\n", serialRxBuf);
+  SerialDebug.printf("UART unexpected: %s\n", serialRxBuf);
 }
 
 void queuePropertyChange(int siid, int piid, const char *value)
@@ -548,6 +550,7 @@ void loopOTA()
 
 void publishState()
 {
+  stateUpdatePreviousMillis = currentTime;
   SerialDebug.println("Publishing new state");
 
   DynamicJsonDocument wifiJson(192);
@@ -589,25 +592,23 @@ void publishState()
   stateJson["waterTank"] = state.waterTankInstalled ? (state.waterTankEmpty ? "empty" : "full") : "missing";
 
   stateJson["wifi"] = wifiJson.as<JsonObject>();
+  stateJson["debug"] = DebugEnabled;
+  stateJson["uart"] = UARTEnabled;
 
   serializeJson(stateJson, payload);
   mqttClient.publish(MQTT_TOPIC_STATE, payload, true);
-
-  stateUpdatePreviousMillis = millis();
 }
 
 void mqttCallback(char *topic, byte *payload, unsigned int length)
 {
+  char payloadText[length + 1];
+  snprintf(payloadText, length + 1, "%s", payload);
+  SerialDebug.printf("MQTT callback with topic <%s> and payload <%s>\n", topic, payloadText);
+
   if (strcmp(topic, MQTT_TOPIC_COMMAND) == 0)
   {
     DynamicJsonDocument commandJson(256);
-    char payloadText[length + 1];
-
-    snprintf(payloadText, length + 1, "%s", payload);
-
     DeserializationError err = deserializeJson(commandJson, payloadText);
-
-    SerialDebug.printf("Received MQTT command: <%s>\n", payloadText);
 
     if (err)
     {
@@ -691,6 +692,10 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
     else if (command == "disableUART")
     {
       UARTEnabled = false;
+    }
+    else if (command == "publishState")
+    {
+      publishState();
     }
   }
 }
