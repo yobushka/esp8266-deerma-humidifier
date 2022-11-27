@@ -8,10 +8,9 @@ module.exports = {
     }
 
     const MAP_FAN_SPEED_TO_MODE = {
-      25: "low",
-      50: "medium",
-      75: "high",
-      100: "setpoint",
+      30: "low",
+      60: "medium",
+      100: "high",
     };
     const MAP_FAN_MODE_TO_SPEED = Object.entries(MAP_FAN_SPEED_TO_MODE).reduce(
       (carry, [key, value]) => {
@@ -29,52 +28,58 @@ module.exports = {
     config.model = "ESP8266 Deerma Humidifier";
     config.type = "custom";
     config.services = [
-      {
-        type: "thermostat",
-        name: `${config.name} - Humidifier`,
-        minTemperature: 0,
-        maxTemperature: 30,
-        temperatureDisplayUnitsValues: "CELSIUS",
-        restrictHeatingCoolingState: [0, 3],
-        topics: {
-          getOnline: MQTT_TOPIC_AVAILABILITY,
-          getTargetHeatingCoolingState: MQTT_TOPIC_READ,
-          setTargetHeatingCoolingState: MQTT_TOPIC_WRITE,
-          getCurrentRelativeHumidity: MQTT_TOPIC_READ,
-          getTargetRelativeHumidity: MQTT_TOPIC_READ,
-          setTargetRelativeHumidity: MQTT_TOPIC_WRITE,
-          getCurrentTemperature: MQTT_TOPIC_READ,
-          getTargetTemperature: MQTT_TOPIC_READ,
-        },
-      },
-      {
-        type: "switch",
-        name: `${config.name} - Sound`,
-        topics: {
-          getOn: {
-            topic: MQTT_TOPIC_READ,
-            statePropertyName: "sound",
-          },
-          setOn: {
-            topic: MQTT_TOPIC_WRITE,
-            statePropertyName: "sound",
-          },
-        },
-      },
-      {
-        type: "switch",
-        name: `${config.name} - LED`,
-        topics: {
-          getOn: {
-            topic: MQTT_TOPIC_READ,
-            statePropertyName: "led",
-          },
-          setOn: {
-            topic: MQTT_TOPIC_WRITE,
-            statePropertyName: "led",
-          },
-        },
-      },
+      config.enableThermostat
+        ? {
+            type: "thermostat",
+            name: `${config.name} - Humidifier`,
+            minTemperature: 0,
+            maxTemperature: 30,
+            temperatureDisplayUnitsValues: "CELSIUS",
+            restrictHeatingCoolingState: [0, 3],
+            topics: {
+              getOnline: MQTT_TOPIC_AVAILABILITY,
+              getTargetHeatingCoolingState: MQTT_TOPIC_READ,
+              setTargetHeatingCoolingState: MQTT_TOPIC_WRITE,
+              getCurrentRelativeHumidity: MQTT_TOPIC_READ,
+              getTargetRelativeHumidity: MQTT_TOPIC_READ,
+              setTargetRelativeHumidity: MQTT_TOPIC_WRITE,
+              getCurrentTemperature: MQTT_TOPIC_READ,
+              getTargetTemperature: MQTT_TOPIC_READ,
+            },
+          }
+        : null,
+      config.enableSoundSwitch
+        ? {
+            type: "switch",
+            name: `${config.name} - Sound`,
+            topics: {
+              getOn: {
+                topic: MQTT_TOPIC_READ,
+                statePropertyName: "sound",
+              },
+              setOn: {
+                topic: MQTT_TOPIC_WRITE,
+                statePropertyName: "sound",
+              },
+            },
+          }
+        : null,
+      config.enableLEDSwitch
+        ? {
+            type: "switch",
+            name: `${config.name} - LED`,
+            topics: {
+              getOn: {
+                topic: MQTT_TOPIC_READ,
+                statePropertyName: "led",
+              },
+              setOn: {
+                topic: MQTT_TOPIC_WRITE,
+                statePropertyName: "led",
+              },
+            },
+          }
+        : null,
       {
         type: "fan",
         name: `${config.name} - Fan`,
@@ -91,23 +96,7 @@ module.exports = {
           setRotationSpeed: MQTT_TOPIC_WRITE,
         },
       },
-      //   {
-      //     type: "humiditySensor",
-      //     name: `${config.name} - Humidity sensor`,
-      //     history: true,
-      //     topics: {
-      //       getCurrentRelativeHumidity: MQTT_TOPIC_READ,
-      //     },
-      //   },
-      //   {
-      //     type: "temperatureSensor",
-      //     name: `${config.name} - Temperature sensor`,
-      //     history: true,
-      //     topics: {
-      //       getCurrentTemperature: MQTT_TOPIC_READ,
-      //     },
-      //   },
-    ];
+    ].filter(Boolean);
 
     return {
       properties: {
