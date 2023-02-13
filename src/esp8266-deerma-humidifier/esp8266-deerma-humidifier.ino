@@ -15,12 +15,33 @@
 #include <ArduinoJson.h>
 #include <SoftwareSerial.h>
 
+bool MQTT_TOPIC_AUTOCONF_GENERATED = false;
+String MQTT_TOPIC_AUTOCONF_HUMIDIFIER_VALUE = "";
+String MQTT_TOPIC_AUTOCONF_LED_SWITCH_VALUE = "";
+String MQTT_TOPIC_AUTOCONF_SOUND_SWITCH_VALUE = "";
+String MQTT_TOPIC_AUTOCONF_WATER_TANK_SENSOR_VALUE = "";
+String MQTT_TOPIC_AUTOCONF_WIFI_SENSOR_VALUE = "";
+String MQTT_TOPIC_AUTOCONF_TEMPERATURE_SENSOR_VALUE = "";
+String MQTT_TOPIC_AUTOCONF_HUMIDITY_SENSOR_VALUE = "";
 
 
 #define FLASH_PIN 0
 #define STATUS_PIN 16
+String identifier = "";
+#define FIRMWARE_PREFIX "esp8266-deerma-humidifier"
 #define AVAILABILITY_ONLINE "online"
 #define AVAILABILITY_OFFLINE "offline"
+String MQTT_TOPIC_AVAILABILITY = "";
+String MQTT_TOPIC_STATE = "";
+String MQTT_TOPIC_COMMAND = "";
+String MQTT_TOPIC_AUTOCONF_HUMIDITY_SENSOR = "";
+String MQTT_TOPIC_AUTOCONF_TEMPERATURE_SENSOR = "";
+String MQTT_TOPIC_AUTOCONF_WIFI_SENSOR = "";
+String MQTT_TOPIC_AUTOCONF_WATER_TANK_SENSOR = "";
+String MQTT_TOPIC_AUTOCONF_HUMIDIFIER = "";
+String MQTT_TOPIC_AUTOCONF_SOUND_SWITCH = "";
+String MQTT_TOPIC_AUTOCONF_LED_SWITCH = "";
+
 
 #define MQTT_TOPIC_DEBUG "esp/debug"
 
@@ -516,6 +537,7 @@ boolean restoreConfig() {
   strcpy(HOSTNAME, "");
   strcpy(LOCATION, "");
   if (read_config()) {
+    identifier = String(HOSTNAME);
     WiFi.hostname(HOSTNAME);
     WiFi.softAPdisconnect(true);
     WiFi.begin(ssid, pass);
@@ -561,6 +583,7 @@ void ota_init() {
 
 
 void mqttcallback(char* topic, unsigned char* payload, unsigned int lenght) {  // fixme to json
+client.publish(MQTT_TOPIC_DEBUG, String(String("MQTT Callback")).c_str());
 int bufflenght = 32;
 char buffer4[bufflenght]; // <-- Enough room for both strings and a NULL character
 for (int i = 0; (i< lenght && i< bufflenght); i++)
@@ -582,6 +605,63 @@ for (int i = 0; (i< lenght && i< bufflenght); i++)
   if (stopic == hum_topic_switch_s) {
      String dbgmsg = String(String("Set target huminidity to:") + String((uint8_t) atoi(buffer4) )); client.publish(MQTT_TOPIC_DEBUG,dbgmsg.c_str());
      setHumiditySetpoint((uint8_t)atoi(buffer4)); };
+
+  if (stopic == MQTT_TOPIC_COMMAND) {
+    DynamicJsonDocument commandJson(256);
+    char payloadText[lenght + 1];
+
+    snprintf(payloadText, lenght + 1, "%s", payload);
+
+    DeserializationError err = deserializeJson(commandJson, payloadText);
+
+    if (!err) {
+      String stateCommand = commandJson["state"].as<String>();
+      String modeCommand = commandJson["mode"].as<String>();
+      String soundCommand = commandJson["sound"].as<String>();
+      String ledCommand = commandJson["led"].as<String>();
+
+      long humiditySetpointCommand = commandJson["humiditySetpoint"] | -1;
+
+
+      String rebootCommand = commandJson["__reboot"].as<String>();
+
+      if (stateCommand == "off") {
+        setPowerState(false);
+      } else if (stateCommand == "on") {
+        setPowerState(true);
+      }
+
+      if (modeCommand == "low") {
+        setHumidityMode((humMode_t)low);
+      } else if (modeCommand == "medium") {
+        setHumidityMode((humMode_t)medium);
+      } else if (modeCommand == "high") {
+        setHumidityMode((humMode_t)high);
+      } else if (modeCommand == "setpoint") {
+        setHumidityMode((humMode_t)setpoint);
+      }
+
+      if (soundCommand == "off") {
+        setbeepState(false);
+      } else if (soundCommand == "on") {
+        setbeepState(true);
+      }
+
+      if (ledCommand == "off") {
+        setLEDState(false);
+      } else if (ledCommand == "on") {
+        setLEDState(true);
+      }
+
+      if (humiditySetpointCommand > -1) {
+        setHumiditySetpoint((uint8_t)humiditySetpointCommand);
+      }
+
+      if(rebootCommand == "reboot__") {
+        ESP.restart();
+      }
+    }
+  }
   return;
 }
 
@@ -617,6 +697,20 @@ void setupMode() {
 }
 
 void updateMqttCommunity() {
+
+
+  MQTT_TOPIC_AVAILABILITY = String(String(String(LOCATION)+String("/"))+String(identifier+String("/status")));
+  MQTT_TOPIC_STATE = String(String(String(LOCATION)+String("/"))+String(identifier+String("/state")));
+  MQTT_TOPIC_COMMAND = String(String(String(LOCATION)+String("/"))+String(identifier+String("/command")));
+
+  MQTT_TOPIC_AUTOCONF_HUMIDITY_SENSOR = String(String(String("homeassistant/sensor/")+String(String(LOCATION)+String("/")))+String(identifier+String("_humidity/config")) );
+  MQTT_TOPIC_AUTOCONF_TEMPERATURE_SENSOR = String(String(String("homeassistant/sensor/")+String(String(LOCATION)+String("/")))+String(identifier+String("_temperature/config")) );
+  MQTT_TOPIC_AUTOCONF_WIFI_SENSOR = String(String(String("homeassistant/sensor/")+String(String(LOCATION)+String("/")))+String(identifier+String("_wifi/config")) );
+  MQTT_TOPIC_AUTOCONF_WATER_TANK_SENSOR = String(String(String("homeassistant/sensor/")+String(String(LOCATION)+String("/")))+String(identifier+String("_water_tank/config")) );
+  MQTT_TOPIC_AUTOCONF_HUMIDIFIER = String(String(String("homeassistant/humidifier/")+String(String(LOCATION)+String("/")))+String(identifier+String("_humidifier/config")) );
+  MQTT_TOPIC_AUTOCONF_SOUND_SWITCH = String(String(String("homeassistant/switch/")+String(String(LOCATION)+String("/")))+String(identifier+String("_sound/config")) );
+  MQTT_TOPIC_AUTOCONF_LED_SWITCH = String(String(String("homeassistant/switch/")+String(String(LOCATION)+String("/")))+String(identifier+String("_led/config")) );
+
 mqtt_sub_prefix = String (String("esp/") + String(HOSTNAME) + "/" + String(LOCATION));
 power_topic_switch_s      = String(mqtt_sub_prefix + "/switch/power").c_str();
 led_topic_switch_s        = String(mqtt_sub_prefix + "/switch/led").c_str();
@@ -628,6 +722,7 @@ mode_topic_switch_s       = String(mqtt_sub_prefix + "/switch/mode").c_str();
 }
 
 void setup() {
+  identifier = String(String("HUMIDIFIER-%X")+String(ESP.getChipId()));
   setupPins();
   setupUART();
   // Serial.begin(115200);
@@ -670,10 +765,13 @@ void setup() {
       client.setCallback(mqttcallback);
 
       char charBuf[50];
-      client.connect(HOSTNAME);
+      client.connect(identifier.c_str(), mqtt_user, mqtt_password, MQTT_TOPIC_AVAILABILITY.c_str(), 1, true, AVAILABILITY_OFFLINE);
+      client.publish(MQTT_TOPIC_DEBUG, String(String("MQTT Client connected")).c_str());
       delay(1500);
       lastReconnectAttempt = 0;
+      client.publish(MQTT_TOPIC_DEBUG, String(String("MQTT Client reconnect call")).c_str());
       mqtt_reconnect();
+      client.publish(MQTT_TOPIC_DEBUG, String(String("MQTT Client reconnect called")).c_str());
       settingMode = false;
       startWebServer();
       return;
@@ -692,8 +790,9 @@ void setup() {
 
 
 bool mqtt_reconnect() {
+  client.publish(MQTT_TOPIC_DEBUG, String(String("MQTT inside reconnect")).c_str());
   buffer_msg += "Calling mqtt_reconnect...\r\n";
-  if (client.connect(HOSTNAME)) {
+  if (client.connect(HOSTNAME,mqtt_user, mqtt_password, MQTT_TOPIC_AVAILABILITY.c_str(), 1, true, AVAILABILITY_OFFLINE)) {
     client.subscribe(debug_topic_switch_s.c_str());
     if (DebugEnabled) { client.publish(MQTT_TOPIC_DEBUG, String(String("MQTT Subscribe: ") + String(debug_topic_switch_s)).c_str()); }
     client.subscribe(reboot_topic_switch_s);
@@ -712,7 +811,10 @@ bool mqtt_reconnect() {
     if (DebugEnabled) { client.publish(MQTT_TOPIC_DEBUG, String(String("MQTT Subscribe: ") + String(mode_topic_switch_s)).c_str()); }
     client.subscribe(hum_topic_switch_s.c_str());
     if (DebugEnabled) { client.publish(MQTT_TOPIC_DEBUG, String(String("MQTT Subscribe: ") + String(hum_topic_switch_s)).c_str()); }
+    client.subscribe(MQTT_TOPIC_COMMAND.c_str());
+    if (DebugEnabled) { client.publish(MQTT_TOPIC_DEBUG, String(String("MQTT Subscribe: ") + String(MQTT_TOPIC_COMMAND)).c_str()); }
     client.setCallback(mqttcallback);
+    client.publish(MQTT_TOPIC_AVAILABILITY.c_str(), AVAILABILITY_ONLINE, true);
 
     buffer_msg += "[mqtt_reconnect()]: Connected, finding community for subscribe...\n";
     for (int i = 0; i < topic_i; i++) {
@@ -722,11 +824,14 @@ bool mqtt_reconnect() {
       }
     };
   };
+  publishAutoConfig();
+  client.publish(MQTT_TOPIC_DEBUG, String(String("MQTT inside reconnect - done")).c_str());
   return client.connected();
 }
 
 
 void reporter_now() {
+  client.publish(MQTT_TOPIC_DEBUG, String(String("MQTT inside reporter_now")).c_str());
   DynamicJsonDocument doc(2048);
 
   doc["device"] = HOSTNAME;
@@ -762,10 +867,13 @@ void reporter_now() {
   size_t n = serializeJson(doc, buffer);
   lastmqttpublishstatereport = client.publish(String(String("json/sensors/"+String(HOSTNAME)+"/") + String(LOCATION)).c_str(), buffer, n);
   reporter_times_count = 0;
+  client.publish(MQTT_TOPIC_DEBUG, String(String("MQTT inside reporter_now - done")).c_str());
+  publishState();
 }
 
 
 void reporter() {
+  /* client.publish(MQTT_TOPIC_DEBUG, String(String("MQTT inside reporter")).c_str());     */
   if (reporter_times_count <= reporter_times) {
     reporter_times_count++;
   } else {
@@ -813,6 +921,7 @@ void reporter() {
 
 
 boolean checkConnection() {
+  client.publish(MQTT_TOPIC_DEBUG, String(String("Check connection")).c_str());
   int count = 0;
   // Serial.print("Waiting for Wi-Fi connection");
   while (count < 30) {
@@ -1162,6 +1271,212 @@ String urlDecode(String input) {
   return s;
 }
 
+
+void generateAutoConfig() {
+  MQTT_TOPIC_AUTOCONF_GENERATED = true;
+  //
+  char mqttPayload[2048];
+  DynamicJsonDocument device(256);
+  DynamicJsonDocument autoconfPayload(1024);
+  StaticJsonDocument<64> identifiersDoc;
+  JsonArray identifiers = identifiersDoc.to<JsonArray>();
+  identifiers.add(identifier.c_str());
+  device["identifiers"] = identifiers;
+  device["manufacturer"] = "Deerma";
+  device["model"] = "Mi Smart Antibacterial Humidifier";
+  device["name"] = identifier;
+  device["sw_version"] = "2021.11.0";
+  autoconfPayload["device"] = device.as<JsonObject>();
+  autoconfPayload["availability_topic"] = MQTT_TOPIC_AVAILABILITY.c_str();
+  autoconfPayload["state_topic"] = MQTT_TOPIC_STATE.c_str();
+  autoconfPayload["name"] = identifier + String(" Humidity");
+  autoconfPayload["device_class"] = "humidity";
+  autoconfPayload["unit_of_measurement"] = "%";
+  autoconfPayload["value_template"] = "{{value_json.humidity}}";
+  autoconfPayload["unique_id"] = identifier + String("_humidity");
+  serializeJson(autoconfPayload, mqttPayload);
+  MQTT_TOPIC_AUTOCONF_HUMIDITY_SENSOR_VALUE = String(mqttPayload);
+
+  autoconfPayload.clear();
+  autoconfPayload["device"] = device.as<JsonObject>();
+  autoconfPayload["availability_topic"] = MQTT_TOPIC_AVAILABILITY.c_str();
+  autoconfPayload["state_topic"] = MQTT_TOPIC_STATE.c_str();
+  autoconfPayload["name"] = identifier + String(" Temperature");
+  autoconfPayload["device_class"] = "temperature";
+  autoconfPayload["unit_of_measurement"] = "°C";
+  autoconfPayload["value_template"] = "{{value_json.temperature}}";
+  autoconfPayload["unique_id"] = identifier + String("_temperature");
+
+  serializeJson(autoconfPayload, mqttPayload);
+  MQTT_TOPIC_AUTOCONF_TEMPERATURE_SENSOR_VALUE = String(mqttPayload);
+  autoconfPayload.clear();
+  autoconfPayload["device"] = device.as<JsonObject>();
+  autoconfPayload["availability_topic"] = MQTT_TOPIC_AVAILABILITY.c_str();
+  autoconfPayload["state_topic"] = MQTT_TOPIC_STATE.c_str();
+  autoconfPayload["name"] = identifier + String(" WiFi");
+  autoconfPayload["value_template"] = "{{value_json.wifi.rssi}}";
+  autoconfPayload["unique_id"] = identifier + String("_wifi");
+  autoconfPayload["unit_of_measurement"] = "dBm";
+  autoconfPayload["json_attributes_topic"] = MQTT_TOPIC_STATE.c_str();
+  autoconfPayload["json_attributes_template"] = "{\"ssid\": \"{{value_json.wifi.ssid}}\", \"ip\": \"{{value_json.wifi.ip}}\"}";
+  autoconfPayload["icon"] = "mdi:wifi";
+  autoconfPayload["entity_category"] = "diagnostic";
+  serializeJson(autoconfPayload, mqttPayload);
+  MQTT_TOPIC_AUTOCONF_WIFI_SENSOR_VALUE = String(mqttPayload);
+  autoconfPayload.clear();
+
+  autoconfPayload["device"] = device.as<JsonObject>();
+  autoconfPayload["availability_topic"] = MQTT_TOPIC_AVAILABILITY.c_str();
+  autoconfPayload["state_topic"] = MQTT_TOPIC_STATE.c_str();
+  autoconfPayload["name"] = identifier + String(" Water Tank");
+  autoconfPayload["value_template"] = "{{value_json.waterTank}}";
+  autoconfPayload["unique_id"] = identifier + String("_water_tank");
+  autoconfPayload["icon"] = "mdi:cup-water";
+  autoconfPayload["entity_category"] = "diagnostic";
+  serializeJson(autoconfPayload, mqttPayload);
+  MQTT_TOPIC_AUTOCONF_WATER_TANK_SENSOR_VALUE = String(mqttPayload);
+  autoconfPayload.clear();
+  autoconfPayload["device"] = device.as<JsonObject>();
+  autoconfPayload["availability_topic"] = MQTT_TOPIC_AVAILABILITY.c_str();
+  autoconfPayload["state_topic"] = MQTT_TOPIC_STATE.c_str();
+  autoconfPayload["command_topic"] = MQTT_TOPIC_COMMAND.c_str();
+  autoconfPayload["name"] = identifier + String(" Sound");
+  autoconfPayload["value_template"] = "{{value_json.sound}}";
+  autoconfPayload["unique_id"] = identifier + String("_sound");
+  autoconfPayload["payload_on"] = "{\"sound\": \"on\"}";
+  autoconfPayload["payload_off"] = "{\"sound\": \"off\"}";
+  autoconfPayload["state_on"] = "on";
+  autoconfPayload["state_off"] = "off";
+  autoconfPayload["icon"] = "mdi:volume-high";
+  autoconfPayload["entity_category"] = "config";
+  serializeJson(autoconfPayload, mqttPayload);
+  MQTT_TOPIC_AUTOCONF_SOUND_SWITCH_VALUE = String(mqttPayload);
+  autoconfPayload.clear();
+  autoconfPayload["device"] = device.as<JsonObject>();
+  autoconfPayload["availability_topic"] = MQTT_TOPIC_AVAILABILITY.c_str();
+  autoconfPayload["state_topic"] = MQTT_TOPIC_STATE.c_str();
+  autoconfPayload["command_topic"] = MQTT_TOPIC_COMMAND.c_str();
+  autoconfPayload["name"] = identifier + String(" LED");
+  autoconfPayload["value_template"] = "{{value_json.led}}";
+  autoconfPayload["unique_id"] = identifier + String("_led");
+  autoconfPayload["payload_on"] = "{\"led\": \"on\"}";
+  autoconfPayload["payload_off"] = "{\"led\": \"off\"}";
+  autoconfPayload["state_on"] = "on";
+  autoconfPayload["state_off"] = "off";
+  autoconfPayload["icon"] = "mdi:led-outline";
+  autoconfPayload["entity_category"] = "config";
+  serializeJson(autoconfPayload, mqttPayload);
+  MQTT_TOPIC_AUTOCONF_LED_SWITCH_VALUE = String(mqttPayload);
+
+  autoconfPayload.clear();
+
+
+
+  autoconfPayload["device"] = device.as<JsonObject>();
+  autoconfPayload["availability_topic"] = MQTT_TOPIC_AVAILABILITY.c_str();;
+  autoconfPayload["name"] = identifier + String(" Humidifier");
+  autoconfPayload["unique_id"] = identifier + String("_humidifier");
+  autoconfPayload["device_class"] = "humidifier";
+
+  autoconfPayload["max_humidity"] = 99;
+  autoconfPayload["min_humidity"] = 0;
+
+  autoconfPayload["state_topic"] = MQTT_TOPIC_STATE.c_str();;
+  autoconfPayload["state_value_template"] = "{\"state\": \"{{value_json.state}}\"}";
+  autoconfPayload["payload_on"] = "{\"state\": \"on\"}";
+  autoconfPayload["payload_off"] = "{\"state\": \"off\"}";
+  autoconfPayload["command_topic"] = MQTT_TOPIC_COMMAND.c_str();;
+  autoconfPayload["state_value_template"] = "{\"state\": \"{{value_json.state}}\"}";
+  autoconfPayload["payload_on"] = "{\"state\": \"on\"}";
+  autoconfPayload["payload_off"] = "{\"state\": \"off\"}";
+
+  StaticJsonDocument<64> modesDoc;
+  JsonArray modes = modesDoc.to<JsonArray>();
+
+  autoconfPayload["target_humidity_state_topic"] = MQTT_TOPIC_STATE.c_str();;
+  autoconfPayload["target_humidity_command_topic"] = MQTT_TOPIC_COMMAND.c_str();;
+  autoconfPayload["target_humidity_state_template"] = "{{value_json.humiditySetpoint | int}}";
+  autoconfPayload["target_humidity_command_template"] = "{\"humiditySetpoint\": {{value | int}}}";
+
+  modes.add("setpoint");
+  modes.add("low");
+  modes.add("medium");
+  modes.add("high");
+
+  autoconfPayload["modes"] = modes;
+  autoconfPayload["mode_state_topic"] = MQTT_TOPIC_STATE.c_str();;
+  autoconfPayload["mode_command_topic"] = MQTT_TOPIC_COMMAND.c_str();;
+  autoconfPayload["mode_state_template"] = "{{value_json.mode}}";
+  autoconfPayload["mode_command_template"] = "{\"mode\": \"{{value}}\"}";
+  serializeJson(autoconfPayload, mqttPayload);
+  MQTT_TOPIC_AUTOCONF_HUMIDIFIER_VALUE = String(mqttPayload);
+}
+
+void publishAutoConfig() {
+  if (!MQTT_TOPIC_AUTOCONF_GENERATED) { generateAutoConfig(); };
+  client.publish(MQTT_TOPIC_DEBUG, String(String("Blocked Publish autoconfig")).c_str());
+  client.publish(MQTT_TOPIC_DEBUG, String(String("Publish autoconfig")).c_str());
+  client.publish(MQTT_TOPIC_AUTOCONF_HUMIDITY_SENSOR.c_str(), MQTT_TOPIC_AUTOCONF_HUMIDITY_SENSOR_VALUE.c_str(), true);
+  client.publish(MQTT_TOPIC_DEBUG, String(String("autoconfig - humidity sensor")).c_str());
+  client.publish(MQTT_TOPIC_AUTOCONF_TEMPERATURE_SENSOR.c_str(), MQTT_TOPIC_AUTOCONF_TEMPERATURE_SENSOR_VALUE.c_str(), true);
+  client.publish(MQTT_TOPIC_DEBUG, String(String("autoconfig - temperature sensor")).c_str());
+  client.publish(MQTT_TOPIC_AUTOCONF_WIFI_SENSOR.c_str(), MQTT_TOPIC_AUTOCONF_WIFI_SENSOR_VALUE.c_str(), true);
+  client.publish(MQTT_TOPIC_DEBUG, String(String("autoconfig - wifi sensor")).c_str());
+  client.publish(MQTT_TOPIC_AUTOCONF_WATER_TANK_SENSOR.c_str(), MQTT_TOPIC_AUTOCONF_WATER_TANK_SENSOR_VALUE.c_str(), true);
+  client.publish(MQTT_TOPIC_DEBUG, String(String("autoconfig - water_tank")).c_str());
+  client.publish(MQTT_TOPIC_AUTOCONF_SOUND_SWITCH.c_str(), MQTT_TOPIC_AUTOCONF_SOUND_SWITCH_VALUE.c_str(), true);
+  client.publish(MQTT_TOPIC_DEBUG, String(String("autoconfig - sound switch")).c_str());
+  client.publish(MQTT_TOPIC_AUTOCONF_LED_SWITCH.c_str(), MQTT_TOPIC_AUTOCONF_LED_SWITCH_VALUE.c_str(), true);
+  client.publish(MQTT_TOPIC_DEBUG, String(String("autoconfig - led switch")).c_str());
+  client.publish(MQTT_TOPIC_AUTOCONF_HUMIDIFIER.c_str(), MQTT_TOPIC_AUTOCONF_HUMIDIFIER_VALUE.c_str(), true);
+  client.publish(MQTT_TOPIC_DEBUG, String(String("autoconfig - autoconf_humidifier")).c_str());
+  client.publish(MQTT_TOPIC_DEBUG, String(String("Publish autoconfig - done")).c_str());
+}
+
+void publishState() {
+  DynamicJsonDocument wifiJson(192);
+  DynamicJsonDocument stateJson(604);
+  char payload[256];
+
+
+  wifiJson["ssid"] = WiFi.SSID();
+  wifiJson["ip"] = WiFi.localIP().toString();
+  wifiJson["rssi"] = WiFi.RSSI();
+
+  stateJson["state"] = state.powerOn ? "on" : "off";
+
+  switch (state.mode) {
+    case (humMode_t)setpoint:
+      stateJson["mode"] = "setpoint";
+      break;
+    case (humMode_t)low:
+      stateJson["mode"] = "low";
+      break;
+    case (humMode_t)medium:
+      stateJson["mode"] = "medium";
+      break;
+    case (humMode_t)high:
+      stateJson["mode"] = "high";
+      break;
+  }
+
+  stateJson["humiditySetpoint"] = state.humiditySetpoint;
+
+  stateJson["humidity"] = state.currentHumidity;
+  stateJson["temperature"] = state.currentTemperature;
+
+  stateJson["sound"] = state.beepEnabled ? "on" : "off";
+  stateJson["led"] = state.ledEnabled ? "on" : "off";
+
+  stateJson["waterTank"] = state.waterTankInstalled ? (state.waterTankEmpty ? "empty" : "full") : "missing";
+
+  stateJson["wifi"] = wifiJson.as<JsonObject>();
+
+  serializeJson(stateJson, payload);
+  client.publish(MQTT_TOPIC_STATE.c_str(), payload, true);
+
+  stateUpdatePreviousMillis = millis();
+}
 
 
 void loop() {
