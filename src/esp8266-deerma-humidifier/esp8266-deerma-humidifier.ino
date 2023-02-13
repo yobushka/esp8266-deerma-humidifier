@@ -63,7 +63,7 @@ humidifierState_t state;
 char serialRxBuf[255];
 char serialTxBuf[255];
 
-boolean DebugEnabled = false;
+boolean DebugEnabled = true;
 boolean UARTEnabled = true;
 
 #define PROP_POWER_SIID 2
@@ -110,14 +110,11 @@ const IPAddress apIP(192, 168, 97, 1);
 boolean settingMode;
 String ssidList;
 char ssid[40] = "";
-char pass[40] = "";
+char pass[80] = "";
 
 /* new vars eof */
 
-int i = 0;
-int cha = 0;
-bool notmatch = true;
-int reporter_times_count = 0;
+int i = 0; int cha = 0; bool notmatch = true; int reporter_times_count = 0;
 int reporter_times = 1000;  // to report mqtt=100 ( 5000 x delay_std (5) ) = 25 sec
 int delay_std = 5;          // x to upside vars
 // int delay_std = 1000;     // x to upside vars
@@ -183,6 +180,7 @@ String status_led_topic_switch_s = String(mqtt_sub_prefix + "/switch/status_led"
 String beep_topic_switch_s       = String(mqtt_sub_prefix + "/switch/beep").c_str();
 String fan_topic_switch_s        = String(mqtt_sub_prefix + "/switch/fan").c_str();
 String mode_topic_switch_s       = String(mqtt_sub_prefix + "/switch/mode").c_str();
+String hum_topic_switch_s        = String(mqtt_sub_prefix + "/switch/hum").c_str();
 
 const char* led_topic_state_s = "esp/airpump/state/led1";
 const char* fan_topic_json_s = "esp/airpump/json";
@@ -324,7 +322,7 @@ void loopUART() {
     fillNextDownstreamMessage();
 
     if (strncmp(nextDownstreamMessage, "none", 4) != 0) {
-    client.publish(MQTT_TOPIC_DEBUG, String(String("sending:[")+String(nextDownstreamMessage)+String("]")).c_str());      
+    client.publish(MQTT_TOPIC_DEBUG, String(String("sending:[")+String(nextDownstreamMessage)+String("]")).c_str());
 //      SerialDebug.printf("Sending: %s\n", nextDownstreamMessage);
     }
 
@@ -387,7 +385,8 @@ void setHumidityMode(humMode_t mode) {
 
 void setHumiditySetpoint(uint8_t value) {
   char valueStr[1];
-  sprintf(valueStr, "%d", value > 60 ? 60 : (value < 40 ? 40 : value));
+    sprintf(valueStr, "%d", value > 60 ? 60 : (value < 40 ? 40 : value));
+  // sprintf(valueStr, "%d", value > 90 ? 90 : (value < 10 ? 10 : value));
   queuePropertyChange(PROP_SET_SIID, PROP_HUMIDITY_SETPOINT_PIID, valueStr);
 }
 
@@ -432,7 +431,7 @@ bool read_config() {
         if (json.success()) {
 #endif
           Serial.println("\nparsed json");
-          if (json['debug'] == 1 ) { DebugEnabled = true;} else { DebugEnabled = false; }; 
+          if (json['debug'] == 1 ) { DebugEnabled = true;} else { DebugEnabled = false; };
           strcpy(ssid, String(json["ssid"]).c_str());
           strcpy(pass, String(json["pass"]).c_str());
           strcpy(mqtt_server, String(json["mqtt_server"]).c_str());
@@ -527,9 +526,7 @@ boolean restoreConfig() {
 }
 
 void ota_init() {
-  // log_msg("OTA_INIT:Start");
   WiFi.setAutoReconnect(true);
-  // log_inf(String("OTA_INIT:Hostname " + String(HOSTNAME)));
   ArduinoOTA.setHostname(HOSTNAME);
   ArduinoOTA.onStart([]() {
     String type;
@@ -538,12 +535,9 @@ void ota_init() {
     } else {  // U_SPIFFS
       type = "filesystem";
     }
-
-    // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
-    // log_msg(String("Start updating " + type));
   });
   ArduinoOTA.onEnd([]() {
-    // log_msg(String("End"));
+
   });
   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
     // log_msg(String("Progress: " + (progress / (total / 100))));
@@ -567,31 +561,27 @@ void ota_init() {
 
 
 void mqttcallback(char* topic, unsigned char* payload, unsigned int lenght) {  // fixme to json
+int bufflenght = 32;
+char buffer4[bufflenght]; // <-- Enough room for both strings and a NULL character
+for (int i = 0; (i< lenght && i< bufflenght); i++)
+{
+ buffer4[i] = payload[i];
+}
+
   buffer_msg = "Callback called\n";
   String stopic = String(topic);
   int val = payload[0];
   buffer_msg = +"topic is: [" + stopic + "] payload ["+ val +"]\n";
   char* top = topic;
   notmatch = false;
-  if (stopic == debug_topic_switch_s) { if ( val == 48 ) { DebugEnabled = false; }; if ( val == 49 ) { DebugEnabled = true; }; reporter_now(); return; };
-  if (stopic == power_topic_switch_s) { if ( val == 48 ) { setPowerState(false); }; if ( val == 49 ) { setPowerState(true); }; reporter_now(); return; };
-  if (stopic == led_topic_switch_s) {   if ( val == 48 ) { setLEDState(false); };   if ( val == 49 ) { setLEDState(true); };   reporter_now(); return; };
-  if (stopic == beep_topic_switch_s) {  if ( val == 48 ) { setbeepState(false); };  if ( val == 49 ) { setbeepState(true); };  reporter_now(); return; };
-  if (stopic == fan_topic_switch_s) {  if ( val == 48 ) {  setPowerState(false); } if (val == 49) { setPowerState(true); setHumidityMode((humMode_t)low); };  if ( val == 50 ) {  setPowerState(true); setHumidityMode((humMode_t)medium); }; if ( val == 51 ) {  setPowerState(true); setHumidityMode((humMode_t)high); };  reporter_now(); return; };
-  // if (stopic == fan_topic_switch_s) {
-//
-/*
-    client.subscribe(power_topic_switch_s.c_str());
-    client.subscribe(led_topic_switch_s.c_str());
-    client.subscribe(status_led_topic_switch_s.c_str());
-    client.subscribe(beep_topic_switch_s.c_str());
-    client.subscribe(fan_topic_switch_s.c_str());
-    client.subscribe(mode_topic_switch_s.c_str());
-*/
-//    reporter_now();
-//    return;
-//  };
-
+  if (stopic == debug_topic_switch_s) { if ( val == 48 ) { DebugEnabled = false; }; if ( val == 49 ) { DebugEnabled = true; }; return; };
+  if (stopic == power_topic_switch_s) { if ( val == 48 ) { setPowerState(false); }; if ( val == 49 ) { setPowerState(true); }; return; };
+  if (stopic == led_topic_switch_s) {   if ( val == 48 ) { setLEDState(false); };   if ( val == 49 ) { setLEDState(true); };   return; };
+  if (stopic == beep_topic_switch_s) {  if ( val == 48 ) { setbeepState(false); };  if ( val == 49 ) { setbeepState(true); };  return; };
+  if (stopic == fan_topic_switch_s) {  if ( val == 48 ) {  setPowerState(false); } if (val == 49) { setPowerState(true); setHumidityMode((humMode_t)low); };  if ( val == 50 ) {  setPowerState(true); setHumidityMode((humMode_t)medium); }; if ( val == 51 ) {  setPowerState(true); setHumidityMode((humMode_t)high); }; if ( val == 52 ) {  setPowerState(true); setHumidityMode((humMode_t)setpoint); }; return; };
+  if (stopic == hum_topic_switch_s) {
+     String dbgmsg = String(String("Set target huminidity to:") + String((uint8_t) atoi(buffer4) )); client.publish(MQTT_TOPIC_DEBUG,dbgmsg.c_str());
+     setHumiditySetpoint((uint8_t)atoi(buffer4)); };
   return;
 }
 
@@ -633,6 +623,7 @@ led_topic_switch_s        = String(mqtt_sub_prefix + "/switch/led").c_str();
 status_led_topic_switch_s = String(mqtt_sub_prefix + "/switch/status_led").c_str();
 beep_topic_switch_s       = String(mqtt_sub_prefix + "/switch/beep").c_str();
 fan_topic_switch_s        = String(mqtt_sub_prefix + "/switch/fan").c_str();
+hum_topic_switch_s        = String(mqtt_sub_prefix + "/switch/hum").c_str();
 mode_topic_switch_s       = String(mqtt_sub_prefix + "/switch/mode").c_str();
 }
 
@@ -651,7 +642,7 @@ void setup() {
   delay(100);
   setup_switch(SWITCH4);
   delay(100);
-  
+
   setup_button(BUTTON1);
   setup_button(BUTTON2);
   setup_button(BUTTON3);
@@ -719,7 +710,8 @@ bool mqtt_reconnect() {
     if (DebugEnabled) { client.publish(MQTT_TOPIC_DEBUG, String(String("MQTT Subscribe: ") + String(fan_topic_switch_s)).c_str()); }
     client.subscribe(mode_topic_switch_s.c_str());
     if (DebugEnabled) { client.publish(MQTT_TOPIC_DEBUG, String(String("MQTT Subscribe: ") + String(mode_topic_switch_s)).c_str()); }
-
+    client.subscribe(hum_topic_switch_s.c_str());
+    if (DebugEnabled) { client.publish(MQTT_TOPIC_DEBUG, String(String("MQTT Subscribe: ") + String(hum_topic_switch_s)).c_str()); }
     client.setCallback(mqttcallback);
 
     buffer_msg += "[mqtt_reconnect()]: Connected, finding community for subscribe...\n";
@@ -736,7 +728,7 @@ bool mqtt_reconnect() {
 
 void reporter_now() {
   DynamicJsonDocument doc(2048);
-  
+
   doc["device"] = HOSTNAME;
   doc["name"] = HOSTNAME;
   doc["device_ip"] = IpAddress2String(WiFi.localIP());
@@ -746,12 +738,13 @@ void reporter_now() {
   doc["rssi"] = WiFi.RSSI();
   if (state.humiditySetpoint != -1) {
   doc["state"] = state.powerOn ? "on" : "off";
+  doc["state_fool"] = state.powerOn ? "4" : "0";
   if (state.powerOn) {
   switch (state.mode) {
-    case (humMode_t)setpoint: doc["mode"] = "setpoint"; doc["fan"] = 0; break;
     case (humMode_t)low: doc["mode"] = "low"; doc["fan"] = 1; break;
     case (humMode_t)medium: doc["mode"] = "medium"; doc["fan"] = 2; break;
     case (humMode_t)high: doc["mode"] = "high"; doc["fan"] = 3; break;
+    case (humMode_t)setpoint: doc["mode"] = "setpoint"; doc["fan"] = 4; break;
     default: doc["mode"] = "unknown"; doc["fan"] = 0; break;
   }
   } else {
@@ -790,7 +783,7 @@ void reporter() {
     doc["rssi"] = WiFi.RSSI();
     doc["state"] = state.powerOn ? "on" : "off";
     doc["state_bool"] = state.powerOn ? "1" : "0";
-    
+
     switch (state.mode) {
       case (humMode_t)setpoint: doc["mode"] = "setpoint"; break;
       case (humMode_t)low: doc["mode"] = "low";       doc["fan"] = "1"; break;
