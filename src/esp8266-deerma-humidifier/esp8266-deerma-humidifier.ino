@@ -583,54 +583,69 @@ void ota_init() {
 
 
 void mqttcallback(char* topic, unsigned char* payload, unsigned int lenght) {  // fixme to json
-client.publish(MQTT_TOPIC_DEBUG, String(String("MQTT Callback")).c_str());
+String zstopic = topic;
+int bufflenght2 = 32;
+char buffer8[bufflenght2]; // <-- Enough room for both strings and a NULL character
 int bufflenght = 32;
 char buffer4[bufflenght]; // <-- Enough room for both strings and a NULL character
+
+
+client.publish(MQTT_TOPIC_DEBUG, String(String("MQTT Callback")).c_str());
+
+for (int i = 0; i < 32; i++) {
+  buffer4[i] = '\0';
+  buffer8[i] = '\0';
+}
+
+
+for (int i = 0; (topic[i] != 0xAA && i< bufflenght2); i++)
+{
+ buffer8[i] = topic[i];
+}
+
 for (int i = 0; (i< lenght && i< bufflenght); i++)
 {
  buffer4[i] = payload[i];
 }
 
+
   buffer_msg = "Callback called\n";
-  String stopic = String(topic);
   int val = payload[0];
-  buffer_msg = +"topic is: [" + stopic + "] payload ["+ val +"]\n";
+  buffer_msg = +"topic is: [" + zstopic + "] payload ["+ buffer4 +"]\n";
+  client.publish(MQTT_TOPIC_DEBUG, String(String("topic is: [" + zstopic + "] payload ["+ String(buffer4) +"]\n")).c_str());
   char* top = topic;
   notmatch = false;
-  if (stopic == debug_topic_switch_s) { if ( val == 48 ) { DebugEnabled = false; }; if ( val == 49 ) { DebugEnabled = true; }; return; };
-  if (stopic == power_topic_switch_s) { if ( val == 48 ) { setPowerState(false); }; if ( val == 49 ) { setPowerState(true); }; return; };
-  if (stopic == led_topic_switch_s) {   if ( val == 48 ) { setLEDState(false); };   if ( val == 49 ) { setLEDState(true); };   return; };
-  if (stopic == beep_topic_switch_s) {  if ( val == 48 ) { setbeepState(false); };  if ( val == 49 ) { setbeepState(true); };  return; };
-  if (stopic == fan_topic_switch_s) {  if ( val == 48 ) {  setPowerState(false); } if (val == 49) { setPowerState(true); setHumidityMode((humMode_t)low); };  if ( val == 50 ) {  setPowerState(true); setHumidityMode((humMode_t)medium); }; if ( val == 51 ) {  setPowerState(true); setHumidityMode((humMode_t)high); }; if ( val == 52 ) {  setPowerState(true); setHumidityMode((humMode_t)setpoint); }; return; };
-  if (stopic == hum_topic_switch_s) {
+  if (zstopic == debug_topic_switch_s) { if ( val == 48 ) { DebugEnabled = false; }; if ( val == 49 ) { DebugEnabled = true; }; return; };
+  if (zstopic == power_topic_switch_s) { if ( val == 48 ) { setPowerState(false); }; if ( val == 49 ) { setPowerState(true); }; return; };
+  if (zstopic == led_topic_switch_s) {   if ( val == 48 ) { setLEDState(false); };   if ( val == 49 ) { setLEDState(true); };   return; };
+  if (zstopic == beep_topic_switch_s) {  if ( val == 48 ) { setbeepState(false); };  if ( val == 49 ) { setbeepState(true); };  return; };
+  if (zstopic == fan_topic_switch_s) {  if ( val == 48 ) {  setPowerState(false); } if (val == 49) { setPowerState(true); setHumidityMode((humMode_t)low); };  if ( val == 50 ) {  setPowerState(true); setHumidityMode((humMode_t)medium); }; if ( val == 51 ) {  setPowerState(true); setHumidityMode((humMode_t)high); }; if ( val == 52 ) {  setPowerState(true); setHumidityMode((humMode_t)setpoint); }; return; };
+  if (zstopic == hum_topic_switch_s) {
      String dbgmsg = String(String("Set target huminidity to:") + String((uint8_t) atoi(buffer4) )); client.publish(MQTT_TOPIC_DEBUG,dbgmsg.c_str());
      setHumiditySetpoint((uint8_t)atoi(buffer4)); };
 
-  if (stopic == MQTT_TOPIC_COMMAND) {
+  if (zstopic == MQTT_TOPIC_COMMAND) {
+    client.publish(MQTT_TOPIC_DEBUG, String("command from HA").c_str());
     DynamicJsonDocument commandJson(256);
     char payloadText[lenght + 1];
 
     snprintf(payloadText, lenght + 1, "%s", payload);
 
-    DeserializationError err = deserializeJson(commandJson, payloadText);
+    DeserializationError err = deserializeJson(commandJson, buffer4);
 
     if (!err) {
+      client.publish(MQTT_TOPIC_DEBUG, String("Desirialize ok").c_str());
       String stateCommand = commandJson["state"].as<String>();
       String modeCommand = commandJson["mode"].as<String>();
       String soundCommand = commandJson["sound"].as<String>();
       String ledCommand = commandJson["led"].as<String>();
-
       long humiditySetpointCommand = commandJson["humiditySetpoint"] | -1;
-
-
       String rebootCommand = commandJson["__reboot"].as<String>();
-
       if (stateCommand == "off") {
         setPowerState(false);
       } else if (stateCommand == "on") {
         setPowerState(true);
       }
-
       if (modeCommand == "low") {
         setHumidityMode((humMode_t)low);
       } else if (modeCommand == "medium") {
@@ -660,6 +675,8 @@ for (int i = 0; (i< lenght && i< bufflenght); i++)
       if(rebootCommand == "reboot__") {
         ESP.restart();
       }
+    } else {
+      client.publish(MQTT_TOPIC_DEBUG, String(String("JSON DECODE ERROR: ")+String(err.c_str())).c_str());
     }
   }
   return;
@@ -831,7 +848,7 @@ bool mqtt_reconnect() {
 
 
 void reporter_now() {
-  client.publish(MQTT_TOPIC_DEBUG, String(String("MQTT inside reporter_now")).c_str());
+  // client.publish(MQTT_TOPIC_DEBUG, String(String("MQTT inside reporter_now")).c_str());
   DynamicJsonDocument doc(2048);
 
   doc["device"] = HOSTNAME;
@@ -867,7 +884,7 @@ void reporter_now() {
   size_t n = serializeJson(doc, buffer);
   lastmqttpublishstatereport = client.publish(String(String("json/sensors/"+String(HOSTNAME)+"/") + String(LOCATION)).c_str(), buffer, n);
   reporter_times_count = 0;
-  client.publish(MQTT_TOPIC_DEBUG, String(String("MQTT inside reporter_now - done")).c_str());
+  // client.publish(MQTT_TOPIC_DEBUG, String(String("MQTT inside reporter_now - done")).c_str());
   publishState();
 }
 
@@ -1286,6 +1303,8 @@ void generateAutoConfig() {
   device["model"] = "Mi Smart Antibacterial Humidifier";
   device["name"] = identifier;
   device["sw_version"] = "2021.11.0";
+  device["configuration_url"] = String(String("http://")+String(WiFi.localIP().toString()));
+  
   autoconfPayload["device"] = device.as<JsonObject>();
   autoconfPayload["availability_topic"] = MQTT_TOPIC_AVAILABILITY.c_str();
   autoconfPayload["state_topic"] = MQTT_TOPIC_STATE.c_str();
