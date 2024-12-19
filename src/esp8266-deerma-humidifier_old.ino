@@ -2,7 +2,7 @@
 #define VERSION "0.5.0"
 
 #include <FS.h>  //this needs to be first, or it all crashes and burns...
-#include <uptime_formatter.h>
+#include <UptimeString.h>
 #include <ESP8266WiFi.h>
 #include <DNSServer.h>
 #include <WiFiClient.h>

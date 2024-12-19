@@ -1,5 +1,5 @@
 #pragma once
-#include <AsyncMqttClient.h>
+#include <AsyncMqtt_Generic.h>
 #include "config_manager.h"
 
 class MqttManager {
